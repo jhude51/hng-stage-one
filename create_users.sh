@@ -5,6 +5,9 @@
 # Author  - Dayo Adeyemi, as part of HNG Internship tasks
 # --------------------------------------------------------------------------------------------------
 
+#Enforce script is ran as root
+[[ "$EUID" -ne 0 ]] && { echo "Script would not run! Please run as root."; exit 1; }
+
 # Check if command line argument is provided
 [[ -z ${1} ]] && { echo "Argument must be a file and not empty"; exit 1; }
 
@@ -25,6 +28,18 @@ LOG_FILE="/var/log/user_management.log"
 
 # Function to generate random password using the built-in RANDOM variable
 # The RANDOM variable is numeric by nature. Hence, it is piped to base64 for alphanumeric
+
+make_group() {
+        if ! getent group $1 >/dev/null; then
+                echo "Group $1 does not exist, Adding it now..."
+                groupadd $1
+                if [ $? -eq 0 ]; then
+                        echo "Group $1 Added"
+                else
+                        echo "Failed to create group $1"
+                fi
+        fi                                                            }
+
 password_gen(){
 	echo $RANDOM | base64
 }
@@ -37,14 +52,6 @@ logger() {
 # Ensure generated password is stored securely
 mkdir -p /var/secure
 chmod 700 /var/secure
-
-make_group() {
-	if ! getent group $1 >/dev/null; then
-		echo "Group $1 does not exist, Adding it now..."
-		groupadd $1
-		echo "Group Added"
-	fi
-}
 
 # Main Script Execution
 # Set the default field seperator to newline to read each line  
@@ -60,11 +67,14 @@ while read -r lines; do
 		# Assign second index to groups
 		groups="${user[1]}"
 
-		#Adding Supplementary Groups if they don't exist 
+		# Adding Supplementary Groups if they don't exist 
 		if [ -n "$groups" ]; then
-			IFS=','
-			for group in "$groups"; do
-				make_group $group
+			IFS=',' read -ra GRPARR <<<"$groups"
+			for group in "${GRPARR[@]}"; do
+				# Trim whitespace
+				group=$(echo "$group" | xargs)
+				make_group ${group}
+				logger "Group $group created successfully."
 			done
 		fi
 
@@ -80,9 +90,12 @@ while read -r lines; do
 			password=$(password_gen)
 			logger "user $username password generated successfully."
 
-			# Create user with home directory -m, create group with same name as user -U
+			make_group $username
+			logger "Created personal group for user $username"
+
+			# Create user with home directory -m, append personal group using -g
 			# Append secondary groups seperated by comma -G
-			useradd -m -U -G $groups $username &>> $LOG_FILE
+			useradd -m -g "${username}" -G "${groups}" "${username}" &>> $LOG_FILE
 			
 			# Log failure if exit code $? is not 0 i.e. useradd failed
 			if [[ $? -ne 0 ]]; then
