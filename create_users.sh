@@ -38,6 +38,14 @@ logger() {
 mkdir -p /var/secure
 chmod 700 /var/secure
 
+make_group() {
+	if ! getent group $1 >/dev/null; then
+		echo "Group $1 does not exist, Adding it now..."
+		groupadd $1
+		echo "Group Added"
+	fi
+}
+
 # Main Script Execution
 # Set the default field seperator to newline to read each line  
 IFS=$'\n'
@@ -51,6 +59,14 @@ while read -r lines; do
 		username="${user[0]}"
 		# Assign second index to groups
 		groups="${user[1]}"
+
+		#Adding Supplementary Groups if they don't exist 
+		if [ -n "$groups" ]; then
+			IFS=','
+			for group in "$groups"; do
+				make_group $group
+			done
+		fi
 
 		# Check if user already exists. If true, skip
 		if id "$username" &>/dev/null; then
